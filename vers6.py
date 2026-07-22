@@ -38,13 +38,18 @@ STORES = {
 }
 
 COOKIES_FILE = "cookies.json"
-DB_FILE = "products.db"
+
+# --- НАСТРОЙКА БАЗЫ ДАННЫХ ДЛЯ RAILWAY ---
+# Если на Railway подключен Volume (путь /data), сохраняем туда, чтобы данные не терялись при деплоях
+DB_DIR = "/data" if os.path.exists("/data") else "."
+DB_FILE = os.path.join(DB_DIR, "products.db")
+
 CONCURRENCY_LIMIT = 3 
 
 # ⚠️ ВСТАВЬТЕ СВОЙ ТОКЕН СЮДА
 TELEGRAM_BOT_TOKEN = "8966210466:AAEqwK-CoT0Bwl07utwqErgf5MkR2Ylo86o"
 
-# 🌐 ВАШ HTTPS АДРЕС (нужен для Mini App: например, ngrok URL или адрес сервера)
+# 🌐 ВАШ HTTPS АДРЕС (нужен для Mini App)
 WEB_APP_URL = "https://wq2521-production.up.railway.app/"
 
 ADMIN_SECRET_URL = "/secret-admin-manage-2026-panel"
@@ -113,6 +118,7 @@ def parse_price_value(price_str: str) -> int:
     return int(digits[0]) if digits else 0
 
 def init_db():
+    os.makedirs(DB_DIR, exist_ok=True)
     conn = sqlite3.connect(DB_FILE, timeout=10)
     cursor = conn.cursor()
     cursor.execute("""
@@ -158,6 +164,7 @@ def init_db():
 
     conn.commit()
     conn.close()
+    db_log(f"База данных успешно инициализирована по пути: {DB_FILE}")
 
 init_db()
 
@@ -168,7 +175,7 @@ def record_price_history(cursor, link: str, price_num: int, now_str: str):
         cursor.execute("INSERT INTO price_history (link, price_num, recorded_at) VALUES (?, ?, ?)",
                        (link, price_num, now_str))
 
-# --- TELEGRAM УВЕДОМЛЕНИЯ И КНОПКИ ---
+# --- TELEGRAM УВЕДОМЛЕНИЯ И КНОПКИ (КНОПКА КАТАЛОГА УДАЛЕНА) ---
 def get_subscribers_for_category(category_id: str):
     conn = sqlite3.connect(DB_FILE, timeout=5)
     cursor = conn.cursor()
@@ -198,8 +205,8 @@ def set_user_subscription(chat_id: int, category: str):
     conn.close()
 
 def get_settings_keyboard(current_cat: str):
+    # Кнопка «🔥 Открыть каталог (Mini App)» полностью удалена отсюда
     buttons = [
-        [InlineKeyboardButton("🔥 Открыть каталог (Mini App)", web_app=WebAppInfo(url="https://wq2521-production.up.railway.app/"))],
         [InlineKeyboardButton(f"{'✅ ' if current_cat == 'all' else ''}🌐 Все категории уведомлений", callback_data="sub_all")],
         [InlineKeyboardButton(f"{'✅ ' if current_cat == 'yandex_fabrika' else ''}🏭 Яндекс Фабрика", callback_data="sub_yandex_fabrika")],
         [InlineKeyboardButton(f"{'✅ ' if current_cat == 'yandex_market' else ''}🛒 Яндекс Маркет", callback_data="sub_yandex_market")]
@@ -281,14 +288,14 @@ def authenticate_admin(request: Request, credentials: HTTPBasicCredentials = Dep
 async def load_all_products(page, store_name):
     previous_count = 0
     no_change_attempts = 0
-    max_no_change = 5  # Увеличено для упорного скролла
+    max_no_change = 5
 
     db_log(f"📜 Сканирование витрины ({store_name})...")
 
     while True:
         try:
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
-            await page.wait_for_timeout(2500)  # Увеличенная пауза для подгрузки
+            await page.wait_for_timeout(2500)
 
             more_button = await page.query_selector('button[data-auto="pagination-next"], [data-zone-name="show-more-button"]')
             if more_button and await more_button.is_visible():
@@ -565,7 +572,7 @@ async def start_telegram_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     await update.message.reply_text(
         "👋 **Добро пожаловать в бот скидок!**\n\n"
-        "Откройте каталог прямо в Telegram через Mini App или выберите категории для получения уведомлений:",
+        "Откройте каталог через кнопку меню (Web App) слева от поля ввода или настройте категории уведомлений:",
         reply_markup=keyboard,
         parse_mode="Markdown"
     )
@@ -585,7 +592,7 @@ async def category_callback_handler(update: Update, context: ContextTypes.DEFAUL
     keyboard = get_settings_keyboard(cat_code)
     await query.edit_message_text(
         "✅ **Настройки уведомлений обновлены!**\n\n"
-        "Откройте каталог через кнопку Mini App или измените настройки:",
+        "Измените настройки подписок при необходимости:",
         reply_markup=keyboard,
         parse_mode="Markdown"
     )
