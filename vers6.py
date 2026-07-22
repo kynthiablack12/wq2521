@@ -21,7 +21,7 @@ from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup
 from jinja2 import Template
 
-from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 from telegram.request import HTTPXRequest
 
@@ -47,7 +47,7 @@ COOKIES_FILE = "cookies.json"
 DB_DIR = "/data" if os.path.exists("/data") else "."
 DB_FILE = os.path.join(DB_DIR, "products.db")
 
-CONCURRENCY_LIMIT = 4
+CONCURRENCY_LIMIT = 2  # Снижено для уменьшения нагрузки на оперативную память
 
 TELEGRAM_BOT_TOKEN = "8966210466:AAEqwK-CoT0Bwl07utwqErgf5MkR2Ylo86o"
 WEB_APP_URL = "https://wq2521-production.up.railway.app/"
@@ -285,23 +285,20 @@ def authenticate_admin(request: Request, credentials: HTTPBasicCredentials = Dep
 async def load_all_products(page, store_name):
     previous_count = 0
     no_change_attempts = 0
-    max_no_change = 8  # Увеличенный порог для надежной докрутки
+    max_no_change = 5
 
     db_log(f"📜 Сканирование витрины ({store_name})...")
 
     while True:
         try:
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
-            await page.wait_for_timeout(3500)
+            await page.wait_for_timeout(2500)
 
-            try:
-                more_button = await page.query_selector('button[data-auto="pagination-next"], [data-zone-name="show-more-button"]')
-                if more_button and await more_button.is_visible():
-                    await more_button.scroll_into_view_if_needed()
-                    await more_button.click()
-                    await page.wait_for_timeout(3000)
-            except Exception:
-                pass
+            more_button = await page.query_selector('button[data-auto="pagination-next"], [data-zone-name="show-more-button"]')
+            if more_button and await more_button.is_visible():
+                await more_button.scroll_into_view_if_needed()
+                await more_button.click()
+                await page.wait_for_timeout(2500)
 
             current_cards = await page.query_selector_all('div[data-data-source="ss-product"], div[data-zone-name="title"]')
             current_count = len(current_cards)
@@ -310,23 +307,14 @@ async def load_all_products(page, store_name):
 
             if current_count == previous_count:
                 no_change_attempts += 1
-                
-                # Микро-скролл для разгона ленивой загрузки (lazy load)
-                await page.evaluate("window.scrollBy(0, -800);")
-                await page.wait_for_timeout(1200)
-                await page.evaluate("window.scrollBy(0, 800);")
-                await page.wait_for_timeout(2000)
+                await page.evaluate("window.scrollBy(0, -500);")
+                await page.wait_for_timeout(1000)
+                await page.evaluate("window.scrollBy(0, 500);")
+                await page.wait_for_timeout(1500)
 
-                current_cards = await page.query_selector_all('div[data-data-source="ss-product"], div[data-zone-name="title"]')
-                current_count = len(current_cards)
-
-                if current_count == previous_count:
-                    if no_change_attempts >= max_no_change:
-                        db_log("🎉 Витрина полностью прокручена (новых товаров больше нет).")
-                        break
-                else:
-                    no_change_attempts = 0
-                    previous_count = current_count
+                if no_change_attempts >= max_no_change:
+                    db_log("🎉 Витрина полностью прокручена.")
+                    break
             else:
                 no_change_attempts = 0
                 previous_count = current_count
@@ -335,9 +323,7 @@ async def load_all_products(page, store_name):
             break
 
 async def handle_route(route):
-    resource_type = route.request.resource_type
-    url = route.request.url
-    if resource_type in ["image", "media", "font", "stylesheet", "script"] or "mc.yandex.ru" in url or "analytics" in url:
+    if route.request.resource_type in ["image", "media", "font", "stylesheet"]:
         await route.abort()
     else:
         await route.continue_()
@@ -380,6 +366,9 @@ async def parse_single_product(context, item, semaphore, counter, total_items):
                     await page.close()
                 except Exception:
                     pass
+            
+            # ⏸️ Пауза между запросами для разгрузки оперативной памяти и процессора сервера
+            await asyncio.sleep(0.8)
 
         counter['done'] += 1
         PARSER_STATE["progress_text"] = f"Детали [{item['category_name']}]: {counter['done']}/{total_items}"
@@ -401,7 +390,6 @@ async def parse_store(store_key: str, with_discounts: bool, send_tg: bool, brows
     )
     await context.add_cookies(cookies)
     main_page = await context.new_page()
-    await main_page.route("**/*", handle_route)
 
     try:
         PARSER_STATE["progress_text"] = f"Загрузка {store_info['name']}..."
@@ -557,20 +545,13 @@ async def execute_parsing_task(target_store: str = "all", with_discounts: bool =
             cookie["sameSite"] = "Lax"
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True, 
-            args=[
-                '--disable-gpu', 
-                '--no-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-setuid-sandbox',
-                '--single-process'
-            ]
-        )
+        browser = await p.chromium.launch(headless=True, args=['--disable-gpu', '--no-sandbox'])
         try:
             if target_store == "all":
                 for key in STORES.keys():
                     await parse_store(key, with_discounts, send_tg, browser, cookies)
+                    # ⏸️ Пауза между магазинами для полного очищения ресурсов памяти
+                    await asyncio.sleep(2.0)
             else:
                 if target_store in STORES:
                     await parse_store(target_store, with_discounts, send_tg, browser, cookies)
@@ -1053,7 +1034,7 @@ async def start_parsing_job(
         with_discounts = (mode == "full")
         send_tg = (send_telegram == "true")
         asyncio.create_task(execute_parsing_task(target_store=target_store, with_discounts=with_discounts, send_tg=send_tg))
-    return RedirectResponse(url=ADMIN_SECRET_URL, status_code=303)
+        return RedirectResponse(url=ADMIN_SECRET_URL, status_code=303)
 
 @app.get("/api/price-history")
 async def get_price_history_api(link: str, request: Request):
