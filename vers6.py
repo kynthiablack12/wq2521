@@ -40,16 +40,12 @@ STORES = {
 COOKIES_FILE = "cookies.json"
 
 # --- НАСТРОЙКА БАЗЫ ДАННЫХ ДЛЯ RAILWAY ---
-# Если на Railway подключен Volume (путь /data), сохраняем туда, чтобы данные не терялись при деплоях
 DB_DIR = "/data" if os.path.exists("/data") else "."
 DB_FILE = os.path.join(DB_DIR, "products.db")
 
 CONCURRENCY_LIMIT = 4
 
-# ⚠️ ВСТАВЬТЕ СВОЙ ТОКЕН СЮДА
 TELEGRAM_BOT_TOKEN = "8966210466:AAEqwK-CoT0Bwl07utwqErgf5MkR2Ylo86o"
-
-# 🌐 ВАШ HTTPS АДРЕС (нужен для Mini App)
 WEB_APP_URL = "https://wq2521-production.up.railway.app/"
 
 ADMIN_SECRET_URL = "/secret-admin-manage-2026-panel"
@@ -175,7 +171,6 @@ def record_price_history(cursor, link: str, price_num: int, now_str: str):
         cursor.execute("INSERT INTO price_history (link, price_num, recorded_at) VALUES (?, ?, ?)",
                        (link, price_num, now_str))
 
-# --- TELEGRAM УВЕДОМЛЕНИЯ И КНОПКИ (КНОПКА КАТАЛОГА УДАЛЕНА) ---
 def get_subscribers_for_category(category_id: str):
     conn = sqlite3.connect(DB_FILE, timeout=5)
     cursor = conn.cursor()
@@ -205,7 +200,6 @@ def set_user_subscription(chat_id: int, category: str):
     conn.close()
 
 def get_settings_keyboard(current_cat: str):
-    # Кнопка «🔥 Открыть каталог (Mini App)» полностью удалена отсюда
     buttons = [
         [InlineKeyboardButton(f"{'✅ ' if current_cat == 'all' else ''}🌐 Все категории уведомлений", callback_data="sub_all")],
         [InlineKeyboardButton(f"{'✅ ' if current_cat == 'yandex_fabrika' else ''}🏭 Яндекс Фабрика", callback_data="sub_yandex_fabrika")],
@@ -247,7 +241,6 @@ async def send_telegram_notification(product: dict):
         except Exception as e:
             db_log(f"⚠️ Ошибка отправки пользователю {chat_id}: {e}")
 
-# --- ЗАЩИТА АДМИНКИ ---
 def authenticate_admin(request: Request, credentials: HTTPBasicCredentials = Depends(security)):
     client_ip = request.client.host
     now = datetime.now()
@@ -284,7 +277,6 @@ def authenticate_admin(request: Request, credentials: HTTPBasicCredentials = Dep
 
     return credentials.username
 
-# --- ДВИЖОК ПАРСИНГА ---
 async def load_all_products(page, store_name):
     previous_count = 0
     no_change_attempts = 0
@@ -601,27 +593,32 @@ async def category_callback_handler(update: Update, context: ContextTypes.DEFAUL
 async def lifespan(app: FastAPI):
     log_task = asyncio.create_task(log_worker())
     
-    if TELEGRAM_BOT_TOKEN and TELEGRAM_BOT_TOKEN != "ВАШ_ТОКЕН_ОТ_BOTFATHER":
-        try:
-            req = HTTPXRequest(connect_timeout=10.0, read_timeout=10.0)
-            tg_app = Application.builder().token(TELEGRAM_BOT_TOKEN).request(req).build()
-            tg_app.add_handler(CommandHandler("start", start_telegram_cmd))
-            tg_app.add_handler(CommandHandler("settings", settings_telegram_cmd))
-            tg_app.add_handler(CallbackQueryHandler(category_callback_handler, pattern="^sub_"))
-            
-            await tg_app.initialize()
-            await tg_app.start()
-            await tg_app.updater.start_polling()
-            db_log("🤖 Telegram-бот запущен!")
-        except Exception as e:
-            db_log(f"⚠️ Ошибка бота: {e}")
+    async def start_telegram_bot():
+        if TELEGRAM_BOT_TOKEN and TELEGRAM_BOT_TOKEN != "ВАШ_ТОКЕН_ОТ_BOTFATHER":
+            try:
+                req = HTTPXRequest(connect_timeout=10.0, read_timeout=10.0)
+                tg_app = Application.builder().token(TELEGRAM_BOT_TOKEN).request(req).build()
+                tg_app.add_handler(CommandHandler("start", start_telegram_cmd))
+                tg_app.add_handler(CommandHandler("settings", settings_telegram_cmd))
+                tg_app.add_handler(CallbackQueryHandler(category_callback_handler, pattern="^sub_"))
+                
+                await tg_app.initialize()
+                await tg_app.start()
+                await tg_app.updater.start_polling()
+                db_log("🤖 Telegram-бот запущен!")
+            except Exception as e:
+                db_log(f"⚠️ Ошибка бота: {e}")
+
+    bot_task = asyncio.create_task(start_telegram_bot())
 
     yield
+    
     log_task.cancel()
+    bot_task.cancel()
 
 app = FastAPI(lifespan=lifespan)
 
-# --- АДАПТИВНЫЕ СТИЛИ (MOBILE-FRIENDLY) ---
+# --- АДАПТИВНЫЕ СТИЛИ И ШАБЛОНЫ ---
 LIGHT_THEME_CSS = """
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
@@ -760,7 +757,6 @@ USER_TEMPLATE = LIGHT_THEME_CSS + """
         {% endif %}
     </div>
 
-    <!-- MODAL -->
     <div class="modal-overlay" id="chartModal">
         <div class="modal-content">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
