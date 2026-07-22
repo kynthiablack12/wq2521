@@ -45,7 +45,7 @@ CONCURRENCY_LIMIT = 3
 TELEGRAM_BOT_TOKEN = "8966210466:AAEqwK-CoT0Bwl07utwqErgf5MkR2Ylo86o"
 
 # 🌐 ВАШ HTTPS АДРЕС (нужен для Mini App: например, ngrok URL или адрес сервера)
-WEB_APP_URL = "https://lazily-little-snipping.ngrok-free.dev/"
+WEB_APP_URL = "https://wq2521-production.up.railway.app/"
 
 ADMIN_SECRET_URL = "/secret-admin-manage-2026-panel"
 ADMIN_USER = "admin"
