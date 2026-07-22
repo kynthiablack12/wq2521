@@ -21,7 +21,7 @@ from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup
 from jinja2 import Template
 
-from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 from telegram.request import HTTPXRequest
 
@@ -47,7 +47,7 @@ COOKIES_FILE = "cookies.json"
 DB_DIR = "/data" if os.path.exists("/data") else "."
 DB_FILE = os.path.join(DB_DIR, "products.db")
 
-CONCURRENCY_LIMIT = 2  # Снижено для уменьшения нагрузки на оперативную память
+CONCURRENCY_LIMIT = 2
 
 TELEGRAM_BOT_TOKEN = "8966210466:AAEqwK-CoT0Bwl07utwqErgf5MkR2Ylo86o"
 WEB_APP_URL = "https://wq2521-production.up.railway.app/"
@@ -64,7 +64,9 @@ PARSER_STATE = {
     "current_store": "—",
     "mode": "В ожидании",
     "progress_text": "Готов к запуску",
-    "last_run": "Еще не запускался"
+    "last_run": "Еще не запускался",
+    "last_activity": 0.0,
+    "forced_stop": False
 }
 
 LOG_QUEUE = asyncio.Queue()
@@ -90,6 +92,7 @@ def db_log(msg: str):
     timestamp = datetime.now().strftime("%H:%M:%S")
     formatted = f"[{timestamp}] {msg}"
     print(formatted, flush=True)
+    PARSER_STATE["last_activity"] = asyncio.get_event_loop().time() if asyncio.get_event_loop().is_running() else datetime.now().timestamp()
     try:
         LOG_QUEUE.put_nowait((timestamp, formatted))
     except Exception:
@@ -290,6 +293,8 @@ async def load_all_products(page, store_name):
     db_log(f"📜 Сканирование витрины ({store_name})...")
 
     while True:
+        if PARSER_STATE["forced_stop"]:
+            break
         try:
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
             await page.wait_for_timeout(2500)
@@ -329,6 +334,9 @@ async def handle_route(route):
         await route.continue_()
 
 async def parse_single_product(context, item, semaphore, counter, total_items):
+    if PARSER_STATE["forced_stop"]:
+        return {**item, "discount": "—", "discount_num": 0}
+        
     async with semaphore:
         if not item['link'] or item['link'] == "#":
             return {**item, "discount": "—", "discount_num": 0}
@@ -367,7 +375,6 @@ async def parse_single_product(context, item, semaphore, counter, total_items):
                 except Exception:
                     pass
             
-            # ⏸️ Пауза между запросами для разгрузки оперативной памяти и процессора сервера
             await asyncio.sleep(0.8)
 
         counter['done'] += 1
@@ -397,6 +404,9 @@ async def parse_store(store_key: str, with_discounts: bool, send_tg: bool, brows
         await main_page.wait_for_timeout(1500)
 
         await load_all_products(main_page, store_info["name"])
+
+        if PARSER_STATE["forced_stop"]:
+            return
 
         html_content = await main_page.content()
         
@@ -437,6 +447,9 @@ async def parse_store(store_key: str, with_discounts: bool, send_tg: bool, brows
 
         raw_products = list(raw_products_map.values())
 
+        if PARSER_STATE["forced_stop"]:
+            return
+
         def process_db_sync(products, store_id):
             conn = sqlite3.connect(DB_FILE, timeout=10)
             cursor = conn.cursor()
@@ -476,7 +489,7 @@ async def parse_store(store_key: str, with_discounts: bool, send_tg: bool, brows
         total_items = len(processed_products)
 
         final_products = []
-        if with_discounts and total_items > 0:
+        if with_discounts and total_items > 0 and not PARSER_STATE["forced_stop"]:
             semaphore = asyncio.Semaphore(CONCURRENCY_LIMIT)
             counter = {'done': 0}
 
@@ -487,6 +500,9 @@ async def parse_store(store_key: str, with_discounts: bool, send_tg: bool, brows
             final_products = await asyncio.gather(*tasks)
         else:
             final_products = [{**item, "discount": "—", "discount_num": 0} for item in processed_products]
+
+        if PARSER_STATE["forced_stop"]:
+            return
 
         def update_details_in_db(items, is_with_discounts):
             conn = sqlite3.connect(DB_FILE, timeout=10)
@@ -501,7 +517,7 @@ async def parse_store(store_key: str, with_discounts: bool, send_tg: bool, brows
 
         await asyncio.to_thread(update_details_in_db, final_products, with_discounts)
 
-        if new_items and send_tg:
+        if new_items and send_tg and not PARSER_STATE["forced_stop"]:
             db_log(f"🔔 Найдено новых товаров: {len(new_items)}. Отправка в Telegram...")
             new_links_set = {ni['link'] for ni in new_items}
             for item in final_products:
@@ -525,6 +541,9 @@ async def execute_parsing_task(target_store: str = "all", with_discounts: bool =
         return
 
     PARSER_STATE["is_active"] = True
+    PARSER_STATE["forced_stop"] = False
+    PARSER_STATE["last_activity"] = asyncio.get_event_loop().time()
+    
     mode_desc = "ПОЛНЫЙ (со скидками)" if with_discounts else "БЫСТРЫЙ"
     PARSER_STATE["mode"] = mode_desc
     
@@ -549,16 +568,22 @@ async def execute_parsing_task(target_store: str = "all", with_discounts: bool =
         try:
             if target_store == "all":
                 for key in STORES.keys():
+                    if PARSER_STATE["forced_stop"]:
+                        break
                     await parse_store(key, with_discounts, send_tg, browser, cookies)
-                    # ⏸️ Пауза между магазинами для полного очищения ресурсов памяти
-                    await asyncio.sleep(2.0)
+                    if not PARSER_STATE["forced_stop"]:
+                        await asyncio.sleep(2.0)
             else:
                 if target_store in STORES:
                     await parse_store(target_store, with_discounts, send_tg, browser, cookies)
 
-            PARSER_STATE["last_run"] = datetime.now().strftime("%d.%m.%Y в %H:%M")
-            PARSER_STATE["progress_text"] = "Завершено"
-            db_log("🎉 ВСЕ ЗАДАЧИ ВЫПОЛНЕНЫ!")
+            if PARSER_STATE["forced_stop"]:
+                db_log("⚠️ Парсинг был принудительно остановлен пользователем. Все успешно обработанные данные сохранены в каталоге.")
+                PARSER_STATE["progress_text"] = "Остановлено пользователем (данные сохранены)"
+            else:
+                PARSER_STATE["last_run"] = datetime.now().strftime("%d.%m.%Y в %H:%M")
+                PARSER_STATE["progress_text"] = "Завершено"
+                db_log("🎉 ВСЕ ЗАДАЧИ ВЫПОЛНЕНЫ!")
 
         except Exception as e:
             db_log(f"❌ Ошибка приложения: {e}")
@@ -958,7 +983,11 @@ ADMIN_TEMPLATE = LIGHT_THEME_CSS + """
         </div>
 
         <div class="card">
-            <h2 style="margin-top: 0; font-size: 1.15rem; margin-bottom: 12px;">📊 Мониторинг</h2>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <h2 style="margin: 0; font-size: 1.15rem;">📊 Мониторинг</h2>
+                <button type="button" class="btn btn-blue" id="stopButton" onclick="forceStopParser()" style="background: var(--accent-red); display: none; padding: 6px 14px; font-size: 0.85rem;">🛑 Остановить парсинг</button>
+            </div>
+            
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; font-size: 0.9rem;">
                 <div style="background: var(--bg-color); padding: 10px 14px; border-radius: 12px;">
                     <span style="color: var(--text-secondary); font-size: 0.75rem; text-transform: uppercase; font-weight: 700;">Статус:</span>
@@ -981,7 +1010,23 @@ ADMIN_TEMPLATE = LIGHT_THEME_CSS + """
         </div>
     </div>
 
+    <!-- ВСПЛЫВАЮЩЕЕ ОКНО ПРИ ЗАВИСАНИИ -->
+    <div class="modal-overlay" id="freezeModal" style="display: none;">
+        <div class="modal-content" style="border: 2px solid var(--accent-red); text-align: center;">
+            <h3 style="color: var(--accent-red); margin-top: 0;">⚠️ Скрипт долго не отвечает (завис?)</h3>
+            <p style="color: var(--text-secondary); font-size: 0.95rem; margin-bottom: 20px;">
+                Похоже, процесс парсинга застрял на одном месте более 3 минут. Вы можете принудительно остановить его прямо сейчас — все товары, которые скрипт <strong>уже успел спарсить и обработать</strong>, полностью сохранены в базе данных и витрине!
+            </p>
+            <div style="display: flex; gap: 10px; justify-content: center;">
+                <button class="btn btn-blue" onclick="closeFreezeModal()" style="background: var(--text-secondary);">Продолжить ждать</button>
+                <button class="btn btn-blue" onclick="forceStopParser()" style="background: var(--accent-red);">🛑 Сохранить то что есть и выйти</button>
+            </div>
+        </div>
+    </div>
+
     <script>
+        let freezeModalShown = false;
+
         async function fetchState() {
             try {
                 const response = await fetch('{{ admin_url }}/api/state');
@@ -997,11 +1042,33 @@ ADMIN_TEMPLATE = LIGHT_THEME_CSS + """
                 const btns = document.querySelectorAll('.action-btn');
                 btns.forEach(btn => btn.disabled = data.is_active);
 
+                const stopBtn = document.getElementById('stopButton');
+                stopBtn.style.display = data.is_active ? 'inline-flex' : 'none';
+
                 const term = document.getElementById('terminal');
                 term.innerHTML = data.logs.map(log => `<div>${log}</div>`).join('');
                 term.scrollTop = term.scrollHeight;
+
+                // Проверка на зависание (если активен и нет обновлений > 180 секунд)
+                if (data.is_active && data.seconds_inactive > 180 && !freezeModalShown) {
+                    document.getElementById('freezeModal').style.display = 'flex';
+                    freezeModalShown = true;
+                } else if (!data.is_active) {
+                    freezeModalShown = false;
+                }
             } catch (e) {}
         }
+
+        function closeFreezeModal() {
+            document.getElementById('freezeModal').style.display = 'none';
+        }
+
+        async function forceStopParser() {
+            await fetch('{{ admin_url }}/stop', { method: 'POST' });
+            document.getElementById('freezeModal').style.display = 'none';
+            location.reload();
+        }
+
         setInterval(fetchState, 1500);
         fetchState();
     </script>
@@ -1019,6 +1086,8 @@ async def get_admin_panel(request: Request, username: str = Depends(authenticate
 @app.get(f"{ADMIN_SECRET_URL}/api/state")
 async def get_admin_state(request: Request, username: str = Depends(authenticate_admin)):
     state_copy = dict(PARSER_STATE)
+    now_ts = asyncio.get_event_loop().time() if asyncio.get_event_loop().is_running() else datetime.now().timestamp()
+    state_copy["seconds_inactive"] = int(now_ts - PARSER_STATE["last_activity"]) if PARSER_STATE["is_active"] else 0
     state_copy["logs"] = await asyncio.to_thread(get_db_logs)
     return JSONResponse(content=state_copy)
 
@@ -1035,6 +1104,12 @@ async def start_parsing_job(
         send_tg = (send_telegram == "true")
         asyncio.create_task(execute_parsing_task(target_store=target_store, with_discounts=with_discounts, send_tg=send_tg))
         return RedirectResponse(url=ADMIN_SECRET_URL, status_code=303)
+
+@app.post(f"{ADMIN_SECRET_URL}/stop")
+async def stop_parsing_job(request: Request, username: str = Depends(authenticate_admin)):
+    PARSER_STATE["forced_stop"] = True
+    db_log("🛑 Пользователь запросил экстренную остановку парсера.")
+    return {"status": "stopping"}
 
 @app.get("/api/price-history")
 async def get_price_history_api(link: str, request: Request):
