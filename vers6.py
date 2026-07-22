@@ -323,7 +323,9 @@ async def load_all_products(page, store_name):
             break
 
 async def handle_route(route):
-    if route.request.resource_type in ["image", "media", "font", "stylesheet"]:
+    resource_type = route.request.resource_type
+    url = route.request.url
+    if resource_type in ["image", "media", "font", "stylesheet", "script"] or "mc.yandex.ru" in url or "analytics" in url:
         await route.abort()
     else:
         await route.continue_()
@@ -387,6 +389,7 @@ async def parse_store(store_key: str, with_discounts: bool, send_tg: bool, brows
     )
     await context.add_cookies(cookies)
     main_page = await context.new_page()
+    await main_page.route("**/*", handle_route)
 
     try:
         PARSER_STATE["progress_text"] = f"Загрузка {store_info['name']}..."
@@ -542,7 +545,16 @@ async def execute_parsing_task(target_store: str = "all", with_discounts: bool =
             cookie["sameSite"] = "Lax"
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True, args=['--disable-gpu', '--no-sandbox'])
+        browser = await p.chromium.launch(
+            headless=True, 
+            args=[
+                '--disable-gpu', 
+                '--no-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-setuid-sandbox',
+                '--single-process'
+            ]
+        )
         try:
             if target_store == "all":
                 for key in STORES.keys():
