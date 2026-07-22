@@ -21,7 +21,7 @@ from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup
 from jinja2 import Template
 
-from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 from telegram.request import HTTPXRequest
 
@@ -285,20 +285,23 @@ def authenticate_admin(request: Request, credentials: HTTPBasicCredentials = Dep
 async def load_all_products(page, store_name):
     previous_count = 0
     no_change_attempts = 0
-    max_no_change = 5
+    max_no_change = 8  # Увеличенный порог для надежной докрутки
 
     db_log(f"📜 Сканирование витрины ({store_name})...")
 
     while True:
         try:
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
-            await page.wait_for_timeout(2500)
+            await page.wait_for_timeout(3500)
 
-            more_button = await page.query_selector('button[data-auto="pagination-next"], [data-zone-name="show-more-button"]')
-            if more_button and await more_button.is_visible():
-                await more_button.scroll_into_view_if_needed()
-                await more_button.click()
-                await page.wait_for_timeout(2500)
+            try:
+                more_button = await page.query_selector('button[data-auto="pagination-next"], [data-zone-name="show-more-button"]')
+                if more_button and await more_button.is_visible():
+                    await more_button.scroll_into_view_if_needed()
+                    await more_button.click()
+                    await page.wait_for_timeout(3000)
+            except Exception:
+                pass
 
             current_cards = await page.query_selector_all('div[data-data-source="ss-product"], div[data-zone-name="title"]')
             current_count = len(current_cards)
@@ -307,14 +310,23 @@ async def load_all_products(page, store_name):
 
             if current_count == previous_count:
                 no_change_attempts += 1
-                await page.evaluate("window.scrollBy(0, -500);")
-                await page.wait_for_timeout(1000)
-                await page.evaluate("window.scrollBy(0, 500);")
-                await page.wait_for_timeout(1500)
+                
+                # Микро-скролл для разгона ленивой загрузки (lazy load)
+                await page.evaluate("window.scrollBy(0, -800);")
+                await page.wait_for_timeout(1200)
+                await page.evaluate("window.scrollBy(0, 800);")
+                await page.wait_for_timeout(2000)
 
-                if no_change_attempts >= max_no_change:
-                    db_log("🎉 Витрина полностью прокручена.")
-                    break
+                current_cards = await page.query_selector_all('div[data-data-source="ss-product"], div[data-zone-name="title"]')
+                current_count = len(current_cards)
+
+                if current_count == previous_count:
+                    if no_change_attempts >= max_no_change:
+                        db_log("🎉 Витрина полностью прокручена (новых товаров больше нет).")
+                        break
+                else:
+                    no_change_attempts = 0
+                    previous_count = current_count
             else:
                 no_change_attempts = 0
                 previous_count = current_count
