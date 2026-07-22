@@ -199,7 +199,7 @@ def set_user_subscription(chat_id: int, category: str):
 
 def get_settings_keyboard(current_cat: str):
     buttons = [
-        [InlineKeyboardButton("🔥 Открыть каталог (Mini App)", web_app=WebAppInfo(url=WEB_APP_URL))],
+        [InlineKeyboardButton("🔥 Открыть каталог (Mini App)", web_app=WebAppInfo(url="https://wq2521-production.up.railway.app/"))],
         [InlineKeyboardButton(f"{'✅ ' if current_cat == 'all' else ''}🌐 Все категории уведомлений", callback_data="sub_all")],
         [InlineKeyboardButton(f"{'✅ ' if current_cat == 'yandex_fabrika' else ''}🏭 Яндекс Фабрика", callback_data="sub_yandex_fabrika")],
         [InlineKeyboardButton(f"{'✅ ' if current_cat == 'yandex_market' else ''}🛒 Яндекс Маркет", callback_data="sub_yandex_market")]
