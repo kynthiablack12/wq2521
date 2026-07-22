@@ -44,7 +44,7 @@ COOKIES_FILE = "cookies.json"
 DB_DIR = "/data" if os.path.exists("/data") else "."
 DB_FILE = os.path.join(DB_DIR, "products.db")
 
-CONCURRENCY_LIMIT = 3 
+CONCURRENCY_LIMIT = 4
 
 # ⚠️ ВСТАВЬТЕ СВОЙ ТОКЕН СЮДА
 TELEGRAM_BOT_TOKEN = "8966210466:AAEqwK-CoT0Bwl07utwqErgf5MkR2Ylo86o"
