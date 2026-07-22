@@ -34,6 +34,10 @@ STORES = {
     "yandex_market": {
         "name": "Яндекс Маркет",
         "url": "https://market.yandex.ru/business--yandex-market/924574"
+    },
+    "vseinstrumenty": {
+        "name": "ВсеИнструменты.ру",
+        "url": "https://market.yandex.ru/business--vseinstrumenty-ru/183049902"
     }
 }
 
@@ -203,7 +207,8 @@ def get_settings_keyboard(current_cat: str):
     buttons = [
         [InlineKeyboardButton(f"{'✅ ' if current_cat == 'all' else ''}🌐 Все категории уведомлений", callback_data="sub_all")],
         [InlineKeyboardButton(f"{'✅ ' if current_cat == 'yandex_fabrika' else ''}🏭 Яндекс Фабрика", callback_data="sub_yandex_fabrika")],
-        [InlineKeyboardButton(f"{'✅ ' if current_cat == 'yandex_market' else ''}🛒 Яндекс Маркет", callback_data="sub_yandex_market")]
+        [InlineKeyboardButton(f"{'✅ ' if current_cat == 'yandex_market' else ''}🛒 Яндекс Маркет", callback_data="sub_yandex_market")],
+        [InlineKeyboardButton(f"{'✅ ' if current_cat == 'vseinstrumenty' else ''}🛠 ВсеИнструменты.ру", callback_data="sub_vseinstrumenty")]
     ]
     return InlineKeyboardMarkup(buttons)
 
@@ -371,7 +376,7 @@ async def parse_single_product(context, item, semaphore, counter, total_items):
             "discount_num": discount_num
         }
 
-async def parse_store(store_key: str, with_discounts: bool, browser, cookies):
+async def parse_store(store_key: str, with_discounts: bool, send_tg: bool, browser, cookies):
     store_info = STORES[store_key]
     PARSER_STATE["current_store"] = store_info["name"]
     db_log(f"🛒 === Старт обработки: {store_info['name']} ===")
@@ -493,12 +498,14 @@ async def parse_store(store_key: str, with_discounts: bool, browser, cookies):
 
         await asyncio.to_thread(update_details_in_db, final_products, with_discounts)
 
-        if new_items:
+        if new_items and send_tg:
             db_log(f"🔔 Найдено новых товаров: {len(new_items)}. Отправка в Telegram...")
             new_links_set = {ni['link'] for ni in new_items}
             for item in final_products:
                 if item['link'] in new_links_set:
                     await send_telegram_notification(item)
+        elif new_items and not send_tg:
+            db_log(f"🔕 Найдено новых товаров: {len(new_items)}, но отправка в Telegram отключена в настройках.")
 
         db_log(f"✅ Магазин {store_info['name']} успешно обновлен! (Всего товаров: {total_items})")
 
@@ -508,7 +515,7 @@ async def parse_store(store_key: str, with_discounts: bool, browser, cookies):
         except Exception:
             pass
 
-async def execute_parsing_task(target_store: str = "all", with_discounts: bool = False):
+async def execute_parsing_task(target_store: str = "all", with_discounts: bool = False, send_tg: bool = True):
     global PARSER_STATE
 
     if PARSER_STATE["is_active"]:
@@ -518,7 +525,7 @@ async def execute_parsing_task(target_store: str = "all", with_discounts: bool =
     mode_desc = "ПОЛНЫЙ (со скидками)" if with_discounts else "БЫСТРЫЙ"
     PARSER_STATE["mode"] = mode_desc
     
-    db_log(f"🚀 Запуск парсинга [{target_store.upper()}] [{mode_desc}]")
+    db_log(f"🚀 Запуск парсинга [{target_store.upper()}] [{mode_desc}] [TG-отправка: {'ВКЛ' if send_tg else 'ВЫКЛ'}]")
 
     try:
         with open(COOKIES_FILE, "r", encoding="utf-8") as f:
@@ -539,10 +546,10 @@ async def execute_parsing_task(target_store: str = "all", with_discounts: bool =
         try:
             if target_store == "all":
                 for key in STORES.keys():
-                    await parse_store(key, with_discounts, browser, cookies)
+                    await parse_store(key, with_discounts, send_tg, browser, cookies)
             else:
                 if target_store in STORES:
-                    await parse_store(target_store, with_discounts, browser, cookies)
+                    await parse_store(target_store, with_discounts, send_tg, browser, cookies)
 
             PARSER_STATE["last_run"] = datetime.now().strftime("%d.%m.%Y в %H:%M")
             PARSER_STATE["progress_text"] = "Завершено"
@@ -933,6 +940,11 @@ ADMIN_TEMPLATE = LIGHT_THEME_CSS + """
                     </select>
                 </div>
 
+                <div style="display: flex; align-items: center; gap: 10px; background: var(--bg-color); padding: 10px 14px; border-radius: 12px;">
+                    <input type="checkbox" id="send_telegram" name="send_telegram" value="true" checked style="width: 18px; height: 18px; accent-color: var(--accent-blue); cursor: pointer;">
+                    <label for="send_telegram" style="font-weight: 600; font-size: 0.9rem; cursor: pointer;">📢 Отправлять уведомления о новых товарах в Telegram</label>
+                </div>
+
                 <div style="display: flex; gap: 10px; flex-wrap: wrap;">
                     <button type="submit" name="mode" value="fast" class="btn btn-blue action-btn" style="flex: 1; min-width: 140px; padding: 12px;" {% if state.is_active %}disabled{% endif %}>⚡ Быстрый сбор</button>
                     <button type="submit" name="mode" value="full" class="btn btn-blue action-btn" style="flex: 1; min-width: 140px; background: var(--accent-green); box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); padding: 12px;" {% if state.is_active %}disabled{% endif %}>🔎 Со скидками</button>
@@ -1010,11 +1022,13 @@ async def start_parsing_job(
     request: Request,
     target_store: str = Form(...), 
     mode: str = Form(...), 
+    send_telegram: str = Form(default=None),
     username: str = Depends(authenticate_admin)
 ):
     if not PARSER_STATE["is_active"]:
         with_discounts = (mode == "full")
-        asyncio.create_task(execute_parsing_task(target_store=target_store, with_discounts=with_discounts))
+        send_tg = (send_telegram == "true")
+        asyncio.create_task(execute_parsing_task(target_store=target_store, with_discounts=with_discounts, send_tg=send_tg))
     return RedirectResponse(url=ADMIN_SECRET_URL, status_code=303)
 
 @app.get("/api/price-history")
