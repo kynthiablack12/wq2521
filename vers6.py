@@ -621,53 +621,59 @@ app = FastAPI(lifespan=lifespan)
 # --- АДАПТИВНЫЕ СТИЛИ И ШАБЛОНЫ ---
 LIGHT_THEME_CSS = """
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
     :root {
-        --bg-color: #f4f6f8; --card-bg: #ffffff; --text-primary: #1e293b;
-        --text-secondary: #64748b; --border-color: #e2e8f0; --accent-blue: #2563eb;
-        --accent-green: #10b981; --accent-red: #ef4444; --accent-gold: #f59e0b;
-        --radius-card: 16px; --radius-btn: 30px;
+        --bg-color: #f8fafc; --card-bg: #ffffff; --text-primary: #0f172a;
+        --text-secondary: #64748b; --border-color: #f1f5f9; --accent-blue: #3b82f6;
+        --accent-green: #10b981; --accent-red: #f43f5e; --accent-gold: #f59e0b;
+        --radius-card: 20px; --radius-btn: 14px; --shadow-soft: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
     }
-    * { box-sizing: border-box; transition: background 0.2s, border 0.2s; }
-    body { font-family: 'Inter', sans-serif; background-color: var(--bg-color); color: var(--text-primary); margin: 0; padding: 12px 8px; overflow-x: hidden; }
-    .container { max-width: 1280px; margin: 0 auto; width: 100%; }
-    .card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: var(--radius-card); padding: 16px; margin-bottom: 12px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03); }
-    h1 { font-size: 1.5rem; font-weight: 800; margin: 0 0 6px 0; }
-    .btn { padding: 8px 16px; border-radius: var(--radius-btn); border: none; font-weight: 600; font-size: 0.85rem; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; text-decoration: none; color: #fff; }
-    .btn:hover { opacity: 0.9; }
-    .btn-blue { background-color: var(--accent-blue); }
-    .btn-outline { background: transparent; border: 2px solid var(--border-color); color: var(--text-primary); }
-    .btn-outline.active { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: var(--bg-color); color: var(--text-primary); margin: 0; padding: 16px 12px; overflow-x: hidden; }
+    .container { max-width: 1200px; margin: 0 auto; width: 100%; }
+    .card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: var(--radius-card); padding: 20px; margin-bottom: 16px; box-shadow: var(--shadow-soft); }
     
-    .nav-tabs { display: flex; gap: 8px; margin-bottom: 12px; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch; }
-    .tab-item { padding: 8px 16px; border-radius: var(--radius-btn); background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-secondary); text-decoration: none; font-weight: 600; white-space: nowrap; font-size: 0.85rem; }
-    .tab-item.active { background: var(--accent-blue); color: #ffffff; border-color: var(--accent-blue); }
+    h1 { font-size: 1.65rem; font-weight: 800; margin: 0; letter-spacing: -0.02em; }
     
-    .table-container { background: var(--card-bg); border-radius: var(--radius-card); border: 1px solid var(--border-color); overflow-x: auto; -webkit-overflow-scrolling: touch; }
-    table { width: 100%; border-collapse: collapse; text-align: left; min-width: 600px; }
-    th { background: #f8fafc; padding: 12px 10px; color: var(--text-secondary); font-size: 0.75rem; text-transform: uppercase; border-bottom: 1px solid var(--border-color); user-select: none; }
-    td { padding: 10px; border-bottom: 1px solid var(--border-color); vertical-align: middle; font-size: 0.9rem; }
+    .btn { padding: 10px 18px; border-radius: var(--radius-btn); border: none; font-weight: 600; font-size: 0.9rem; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; color: #fff; transition: all 0.2s ease; }
+    .btn:active { transform: scale(0.97); }
+    .btn-blue { background-color: var(--accent-blue); box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3); }
+    .btn-outline { background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-primary); box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+    .btn-outline.active { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3); }
     
-    .discount-pill { background: #fef2f2; color: var(--accent-red); font-weight: 700; padding: 3px 8px; border-radius: 10px; font-size: 0.8rem; }
-    .fav-btn { background: none; border: none; font-size: 1.2rem; cursor: pointer; }
+    .nav-tabs { display: flex; gap: 10px; margin-bottom: 16px; overflow-x: auto; padding-bottom: 6px; -webkit-overflow-scrolling: touch; }
+    .nav-tabs::-webkit-scrollbar { display: none; }
+    .tab-item { padding: 10px 20px; border-radius: var(--radius-btn); background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-secondary); text-decoration: none; font-weight: 700; white-space: nowrap; font-size: 0.9rem; box-shadow: var(--shadow-soft); }
+    .tab-item.active { background: var(--accent-blue); color: #ffffff; border-color: var(--accent-blue); box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3); }
     
-    .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center; z-index: 1000; padding: 10px; }
-    .modal-content { background: #fff; padding: 20px; border-radius: var(--radius-card); max-width: 600px; width: 100%; max-height: 85vh; overflow-y: auto; }
-    .terminal-box { background: #0f172a; color: #38bdf8; border-radius: 12px; padding: 15px; height: 280px; overflow-y: auto; font-family: monospace; font-size: 0.8rem; }
+    .table-container { background: var(--card-bg); border-radius: var(--radius-card); border: 1px solid var(--border-color); overflow-x: auto; -webkit-overflow-scrolling: touch; box-shadow: var(--shadow-soft); }
+    table { width: 100%; border-collapse: collapse; text-align: left; min-width: 650px; }
+    th { background: #fafafa; padding: 14px 16px; color: var(--text-secondary); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--border-color); }
+    td { padding: 16px; border-bottom: 1px solid var(--border-color); vertical-align: middle; font-size: 0.95rem; }
+    tr:last-child td { border-bottom: none; }
+    
+    .discount-pill { background: #fff1f2; color: var(--accent-red); font-weight: 800; padding: 5px 10px; border-radius: 8px; font-size: 0.85rem; display: inline-block; }
+    .fav-btn { background: none; border: none; font-size: 1.3rem; cursor: pointer; padding: 4px; transition: transform 0.2s; }
+    .fav-btn:active { transform: scale(1.3); }
+    
+    .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); display: none; justify-content: center; align-items: center; z-index: 1000; padding: 16px; }
+    .modal-content { background: #fff; padding: 24px; border-radius: var(--radius-card); max-width: 650px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1); }
+    .terminal-box { background: #0f172a; color: #38bdf8; border-radius: 14px; padding: 16px; height: 300px; overflow-y: auto; font-family: monospace; font-size: 0.85rem; line-height: 1.5; }
     
     .counter-badge {
-        background: #eff6ff; color: var(--accent-blue); border: 1px solid #bfdbfe;
-        padding: 5px 12px; border-radius: 16px; font-weight: 700; font-size: 0.8rem;
+        background: #eff6ff; color: var(--accent-blue); border: 1px solid #dbeafe;
+        padding: 6px 14px; border-radius: 20px; font-weight: 700; font-size: 0.85rem;
         display: inline-flex; align-items: center; gap: 6px;
     }
 
     @media (max-width: 768px) {
-        body { padding: 8px 4px; }
-        h1 { font-size: 1.3rem; }
-        .card { padding: 12px; border-radius: 12px; }
-        #searchInput, #sortSelect, #filterSuperBtn { width: 100%; text-align: center; }
-        td, th { padding: 8px 6px; font-size: 0.8rem; }
-        .btn { padding: 6px 12px; font-size: 0.8rem; }
+        body { padding: 8px; }
+        h1 { font-size: 1.4rem; }
+        .card { padding: 14px; border-radius: 16px; margin-bottom: 12px; }
+        .controls-grid { flex-direction: column; align-items: stretch !important; }
+        #searchInput, #sortSelect, #filterSuperBtn { width: 100% !important; text-align: center; }
+        td, th { padding: 12px 10px; font-size: 0.85rem; }
+        .btn { padding: 8px 14px; font-size: 0.85rem; }
     }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -677,17 +683,17 @@ LIGHT_THEME_CSS = """
 USER_TEMPLATE = LIGHT_THEME_CSS + """
 <!DOCTYPE html>
 <html lang="ru">
-<head><meta charset="UTF-8"><title>Витрина Скидок</title></head>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Витрина Скидок</title></head>
 <body>
     <div class="container">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; gap: 12px;">
             <div>
                 <h1>🔥 Витрина Скидок</h1>
-                <div style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 6px;">🕒 Обновлено: {{ last_update }}</div>
-                <div class="counter-badge">📦 Товаров: {{ total_count }}</div>
+                <div style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 4px; margin-bottom: 8px;">🕒 Обновлено: {{ last_update }}</div>
+                <div class="counter-badge">📦 Товаров в каталоге: {{ total_count }}</div>
             </div>
             <div>
-                <button class="btn btn-outline" id="favFilterBtn" onclick="toggleFavFilter()">❤️ Избранное (<span id="favCount">0</span>)</button>
+                <button class="btn btn-outline" id="favFilterBtn" onclick="toggleFavFilter()" style="border-radius: 20px;">❤️ Избранное (<span id="favCount">0</span>)</button>
             </div>
         </div>
 
@@ -697,11 +703,11 @@ USER_TEMPLATE = LIGHT_THEME_CSS + """
             {% endfor %}
         </div>
 
-        <div class="card" style="padding: 12px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
-            <input type="text" id="searchInput" class="btn btn-outline" style="flex-grow: 1; text-align: left;" placeholder="🔍 Поиск по названию..." onkeyup="applyFilters()">
+        <div class="card controls-grid" style="padding: 14px; display: flex; gap: 10px; align-items: center;">
+            <input type="text" id="searchInput" class="btn btn-outline" style="flex-grow: 1; text-align: left; justify-content: flex-start; cursor: text;" placeholder="🔍 Поиск по названию товара..." onkeyup="applyFilters()">
             <button class="btn btn-outline" id="filterSuperBtn" onclick="toggleSuperDiscount()">💥 Скидки >30%</button>
             
-            <select id="sortSelect" class="btn btn-outline" onchange="applyFilters()">
+            <select id="sortSelect" class="btn btn-outline" onchange="applyFilters()" style="cursor: pointer;">
                 <option value="default">Сортировка по умолчанию</option>
                 <option value="discount_desc">Скидка: Сначала больше %</option>
                 <option value="price_asc">Цена: Сначала дешевле</option>
@@ -713,11 +719,11 @@ USER_TEMPLATE = LIGHT_THEME_CSS + """
             <table>
                 <thead>
                     <tr>
-                        <th style="width: 35px;">❤️</th>
+                        <th style="width: 40px; text-align: center;">❤️</th>
                         <th>Наименование товара</th>
-                        <th style="width: 120px;">Цена</th>
-                        <th style="text-align: center; width: 100px;">Скидка</th>
-                        <th style="text-align: right; width: 160px;">Действия</th>
+                        <th style="width: 130px;">Цена</th>
+                        <th style="text-align: center; width: 110px;">Скидка</th>
+                        <th style="text-align: right; width: 170px;">Действия</th>
                     </tr>
                 </thead>
                 <tbody id="tableBody">
@@ -729,20 +735,22 @@ USER_TEMPLATE = LIGHT_THEME_CSS + """
                         data-price-str="{{ p.price }}"
                         data-discount-str="{{ p.discount }}">
                         
-                        <td>
+                        <td style="text-align: center;">
                             <button class="fav-btn" onclick="toggleFav('{{ p.link }}')">🤍</button>
                         </td>
                         <td>
-                            <strong style="cursor: pointer;" onclick="openChart('{{ p.link }}', '{{ p.title|e }}')">{{ p.title }}</strong>
+                            <strong style="cursor: pointer; color: var(--text-primary); line-height: 1.4;" onclick="openChart('{{ p.link }}', '{{ p.title|e }}')">{{ p.title }}</strong>
                         </td>
-                        <td style="font-weight: 700; color: var(--accent-blue);">{{ p.price }}</td>
+                        <td style="font-weight: 800; color: var(--accent-blue); white-space: nowrap;">{{ p.price }}</td>
                         <td style="text-align: center;">
-                            {% if p.discount != '—' %}<span class="discount-pill">{{ p.discount }}</span>{% else %}—{% endif %}
+                            {% if p.discount != '—' %}<span class="discount-pill">{{ p.discount }}</span>{% else %}<span style="color: var(--text-secondary);">—</span>{% endif %}
                         </td>
-                        <td style="text-align: right; display: flex; gap: 4px; justify-content: flex-end;">
-                            <button class="btn btn-outline" style="padding: 5px 10px;" onclick="openChart('{{ p.link }}', '{{ p.title|e }}')" title="График">📈</button>
-                            <button class="btn btn-outline" style="padding: 5px 10px;" onclick="copyPost(this)" title="Копировать">📋</button>
-                            <a href="{{ p.link }}" target="_blank" class="btn btn-blue" style="padding: 5px 12px; font-size: 0.8rem;">Купить ↗</a>
+                        <td style="text-align: right;">
+                            <div style="display: flex; gap: 6px; justify-content: flex-end;">
+                                <button class="btn btn-outline" style="padding: 6px 10px;" onclick="openChart('{{ p.link }}', '{{ p.title|e }}')" title="График цен">📈</button>
+                                <button class="btn btn-outline" style="padding: 6px 10px;" onclick="copyPost(this)" title="Копировать пост">📋</button>
+                                <a href="{{ p.link }}" target="_blank" class="btn btn-blue" style="padding: 6px 14px; font-size: 0.85rem;">Купить ↗</a>
+                            </div>
                         </td>
                     </tr>
                     {% endfor %}
@@ -750,20 +758,22 @@ USER_TEMPLATE = LIGHT_THEME_CSS + """
             </table>
         </div>
         {% else %}
-        <div class="card" style="text-align: center; padding: 40px;">
-            <h3>Товары не найдены</h3>
-            <p style="color: var(--text-secondary);">Запустите парсинг через админ-панель.</p>
+        <div class="card" style="text-align: center; padding: 50px 20px;">
+            <h3 style="margin-top: 0; margin-bottom: 8px;">Товары не найдены</h3>
+            <p style="color: var(--text-secondary); margin: 0;">Запустите парсинг через админ-панель, чтобы наполнить витрину.</p>
         </div>
         {% endif %}
     </div>
 
-    <div class="modal-overlay" id="chartModal">
+    <div class="modal-overlay" id="chartModal" onclick="if(event.target === this) closeChart();">
         <div class="modal-content">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                <h3 id="modalTitle" style="margin: 0; font-size: 1rem;">История цен</h3>
-                <button class="btn btn-outline" style="padding: 2px 8px;" onclick="closeChart()">✕</button>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <h3 id="modalTitle" style="margin: 0; font-size: 1.05rem; padding-right: 12px; font-weight: 700;">История цен</h3>
+                <button class="btn btn-outline" style="padding: 6px 12px; border-radius: 50%; width: 32px; height: 32px;" onclick="closeChart()">✕</button>
             </div>
-            <canvas id="priceChartCanvas"></canvas>
+            <div style="position: relative; height: 260px; width: 100%;">
+                <canvas id="priceChartCanvas"></canvas>
+            </div>
         </div>
     </div>
 
@@ -872,13 +882,20 @@ USER_TEMPLATE = LIGHT_THEME_CSS + """
                     datasets: [{
                         label: 'Цена (₽)',
                         data: history.map(h => h.price),
-                        borderColor: '#2563eb',
-                        backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderWidth: 3,
                         fill: true,
-                        tension: 0.3
+                        tension: 0.35,
+                        pointRadius: 4,
+                        pointBackgroundColor: '#3b82f6'
                     }]
                 },
-                options: { responsive: true }
+                options: { 
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } }
+                }
             });
         }
 
@@ -895,20 +912,20 @@ USER_TEMPLATE = LIGHT_THEME_CSS + """
 ADMIN_TEMPLATE = LIGHT_THEME_CSS + """
 <!DOCTYPE html>
 <html lang="ru">
-<head><meta charset="UTF-8"><title>Панель Управления</title></head>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Панель Управления</title></head>
 <body>
     <div class="container">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
             <h1>⚙️ Админ-панель</h1>
             <a href="/" class="btn btn-outline">← На витрину</a>
         </div>
 
         <div class="card">
-            <h2>🚀 Запуск сбора</h2>
-            <form method="POST" action="{{ admin_url }}/start" style="display: flex; flex-direction: column; gap: 12px; margin-top: 12px;">
+            <h2 style="margin-top: 0; font-size: 1.15rem; margin-bottom: 12px;">🚀 Запуск сбора данных</h2>
+            <form method="POST" action="{{ admin_url }}/start" style="display: flex; flex-direction: column; gap: 14px;">
                 <div>
-                    <label style="font-weight: 600; display: block; margin-bottom: 4px; color: var(--text-secondary); font-size: 0.85rem;">Категория:</label>
-                    <select name="target_store" class="btn btn-outline" style="width: 100%; text-align: left; padding: 10px;">
+                    <label style="font-weight: 700; display: block; margin-bottom: 6px; color: var(--text-secondary); font-size: 0.85rem;">Категория:</label>
+                    <select name="target_store" class="btn btn-outline" style="width: 100%; text-align: left; padding: 12px; cursor: pointer;">
                         <option value="all">🌐 Все магазины по очереди</option>
                         {% for key, store in stores.items() %}
                         <option value="{{ key }}">🏬 {{ store.name }}</option>
@@ -917,32 +934,32 @@ ADMIN_TEMPLATE = LIGHT_THEME_CSS + """
                 </div>
 
                 <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                    <button type="submit" name="mode" value="fast" class="btn btn-blue action-btn" style="flex: 1; min-width: 140px;" {% if state.is_active %}disabled{% endif %}>⚡ Быстрый сбор</button>
-                    <button type="submit" name="mode" value="full" class="btn btn-blue action-btn" style="flex: 1; min-width: 140px; background: var(--accent-green);" {% if state.is_active %}disabled{% endif %}>🔎 Со скидками</button>
+                    <button type="submit" name="mode" value="fast" class="btn btn-blue action-btn" style="flex: 1; min-width: 140px; padding: 12px;" {% if state.is_active %}disabled{% endif %}>⚡ Быстрый сбор</button>
+                    <button type="submit" name="mode" value="full" class="btn btn-blue action-btn" style="flex: 1; min-width: 140px; background: var(--accent-green); box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); padding: 12px;" {% if state.is_active %}disabled{% endif %}>🔎 Со скидками</button>
                 </div>
             </form>
         </div>
 
         <div class="card">
-            <h2>📊 Мониторинг</h2>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; font-size: 0.9rem;">
-                <div>
-                    <span style="color: var(--text-secondary); font-size: 0.8rem;">Статус:</span>
-                    <div id="statusBadge" style="font-weight: bold; margin-top: 2px;"></div>
+            <h2 style="margin-top: 0; font-size: 1.15rem; margin-bottom: 12px;">📊 Мониторинг</h2>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; font-size: 0.9rem;">
+                <div style="background: var(--bg-color); padding: 10px 14px; border-radius: 12px;">
+                    <span style="color: var(--text-secondary); font-size: 0.75rem; text-transform: uppercase; font-weight: 700;">Статус:</span>
+                    <div id="statusBadge" style="font-weight: 800; margin-top: 4px;"></div>
                 </div>
-                <div>
-                    <span style="color: var(--text-secondary); font-size: 0.8rem;">Магазин:</span>
-                    <div id="currentStore" style="font-weight: bold; margin-top: 2px; color: var(--accent-blue);">{{ state.current_store }}</div>
+                <div style="background: var(--bg-color); padding: 10px 14px; border-radius: 12px;">
+                    <span style="color: var(--text-secondary); font-size: 0.75rem; text-transform: uppercase; font-weight: 700;">Магазин:</span>
+                    <div id="currentStore" style="font-weight: 800; margin-top: 4px; color: var(--accent-blue);">{{ state.current_store }}</div>
                 </div>
-                <div>
-                    <span style="color: var(--text-secondary); font-size: 0.8rem;">Прогресс:</span>
-                    <div id="progressText" style="font-weight: bold; margin-top: 2px;">{{ state.progress_text }}</div>
+                <div style="background: var(--bg-color); padding: 10px 14px; border-radius: 12px; grid-column: span 2;">
+                    <span style="color: var(--text-secondary); font-size: 0.75rem; text-transform: uppercase; font-weight: 700;">Прогресс:</span>
+                    <div id="progressText" style="font-weight: 800; margin-top: 4px;">{{ state.progress_text }}</div>
                 </div>
             </div>
         </div>
 
         <div class="card">
-            <h2>💻 Консоль логов</h2>
+            <h2 style="margin-top: 0; font-size: 1.15rem; margin-bottom: 12px;">💻 Консоль логов</h2>
             <div class="terminal-box" id="terminal"></div>
         </div>
     </div>
