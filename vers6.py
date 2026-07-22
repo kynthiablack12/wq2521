@@ -14,7 +14,7 @@ import secrets
 from urllib.parse import urlparse, urlunparse
 from datetime import datetime, timedelta
 
-from fastapi import FastAPI, Depends, HTTPException, status, Form, Request
+from fastapi import FastAPI, Depends, HTTPException, status, Form, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from playwright.async_api import async_playwright
@@ -284,6 +284,44 @@ def authenticate_admin(request: Request, credentials: HTTPBasicCredentials = Dep
         del FAILED_ATTEMPTS[client_ip]
 
     return credentials.username
+
+async def test_cookies_validity():
+    if not os.path.exists(COOKIES_FILE):
+        return {"status": "error", "message": "Файл cookies.json не найден на сервере."}
+    
+    try:
+        with open(COOKIES_FILE, "r", encoding="utf-8") as f:
+            cookies = json.load(f)
+    except Exception as e:
+        return {"status": "error", "message": f"Ошибка чтения JSON структуры: {e}"}
+
+    for cookie in cookies:
+        if cookie.get("sameSite") == "no_restriction":
+            cookie["sameSite"] = "None"
+        elif cookie.get("sameSite") is None:
+            cookie["sameSite"] = "Lax"
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True, args=['--disable-gpu', '--no-sandbox'])
+        context = await browser.new_context()
+        try:
+            await context.add_cookies(cookies)
+            page = await context.new_page()
+            # Пытаемся зайти на маркет под куками
+            response = await page.goto("https://market.yandex.ru/", wait_until="commit", timeout=10000)
+            await page.wait_for_timeout(2000)
+            
+            content = await page.content()
+            # Проверяем на наличие признаков капчи или блокировки
+            if "капча" in content.lower() or "подтвердите, что вы не робот" in content.lower():
+                await browser.close()
+                return {"status": "warning", "message": "⚠️ Куки работают, но Яндекс затребовал капчу!"}
+            
+            await browser.close()
+            return {"status": "success", "message": "✅ Сессия активна! Куки прошли валидацию успешно."}
+        except Exception as e:
+            await browser.close()
+            return {"status": "error", "message": f"❌ Ошибка проверки соединения: {str(e)}"}
 
 async def load_all_products(page, store_name):
     previous_count = 0
@@ -957,6 +995,25 @@ ADMIN_TEMPLATE = LIGHT_THEME_CSS + """
             <a href="/" class="btn btn-outline">← На витрину</a>
         </div>
 
+        <!-- УПРАВЛЕНИЕ COOKIES -->
+        <div class="card" style="border: 1px solid var(--accent-blue);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h2 style="margin: 0; font-size: 1.15rem;">🔑 Управление сессией (Cookies)</h2>
+                <button type="button" class="btn btn-outline" onclick="testCookies()" style="padding: 6px 12px; font-size: 0.85rem;">🔍 Проверить куки</button>
+            </div>
+            <p style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 0; margin-bottom: 14px;">
+                Обновите файл сессии, если Яндекс запросил капчу или сбросил авторизацию.
+            </p>
+            <div id="cookieTestResult" style="display: none; padding: 10px 14px; border-radius: 12px; margin-bottom: 14px; font-weight: 600; font-size: 0.9rem;"></div>
+            
+            <form method="POST" action="{{ admin_url }}/update-cookies" enctype="multipart/form-data" style="display: flex; flex-direction: column; gap: 10px;">
+                <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                    <input type="file" name="cookie_file" accept=".json" class="btn btn-outline" style="flex: 1; padding: 8px; cursor: pointer;">
+                    <button type="submit" class="btn btn-blue" style="padding: 10px 18px;">Загрузить файл</button>
+                </div>
+            </form>
+        </div>
+
         <div class="card">
             <h2 style="margin-top: 0; font-size: 1.15rem; margin-bottom: 12px;">🚀 Запуск сбора данных</h2>
             <form method="POST" action="{{ admin_url }}/start" style="display: flex; flex-direction: column; gap: 14px;">
@@ -1049,7 +1106,6 @@ ADMIN_TEMPLATE = LIGHT_THEME_CSS + """
                 term.innerHTML = data.logs.map(log => `<div>${log}</div>`).join('');
                 term.scrollTop = term.scrollHeight;
 
-                // Проверка на зависание (если активен и нет обновлений > 180 секунд)
                 if (data.is_active && data.seconds_inactive > 180 && !freezeModalShown) {
                     document.getElementById('freezeModal').style.display = 'flex';
                     freezeModalShown = true;
@@ -1057,6 +1113,32 @@ ADMIN_TEMPLATE = LIGHT_THEME_CSS + """
                     freezeModalShown = false;
                 }
             } catch (e) {}
+        }
+
+        async function testCookies() {
+            const resDiv = document.getElementById('cookieTestResult');
+            resDiv.style.display = 'block';
+            resDiv.style.background = '#eff6ff';
+            resDiv.style.color = '#3b82f6';
+            resDiv.textContent = '⏳ Проверяем куки и соединение с Яндексом...';
+
+            try {
+                const resp = await fetch('{{ admin_url }}/api/test-cookies', { method: 'POST' });
+                const data = await resp.json();
+                
+                resDiv.textContent = data.message;
+                if (data.status === 'success') {
+                    resDiv.style.background = '#ecfdf5';
+                    resDiv.style.color = '#10b981';
+                } else {
+                    resDiv.style.background = '#fff1f2';
+                    resDiv.style.color = '#f43f5e';
+                }
+            } catch (e) {
+                resDiv.style.background = '#fff1f2';
+                resDiv.style.color = '#f43f5e';
+                resDiv.textContent = '❌ Ошибка выполнения запроса проверки.';
+            }
         }
 
         function closeFreezeModal() {
@@ -1090,6 +1172,27 @@ async def get_admin_state(request: Request, username: str = Depends(authenticate
     state_copy["seconds_inactive"] = int(now_ts - PARSER_STATE["last_activity"]) if PARSER_STATE["is_active"] else 0
     state_copy["logs"] = await asyncio.to_thread(get_db_logs)
     return JSONResponse(content=state_copy)
+
+@app.post(f"{ADMIN_SECRET_URL}/api/test-cookies")
+async def api_test_cookies(request: Request, username: str = Depends(authenticate_admin)):
+    res = await test_cookies_validity()
+    return JSONResponse(content=res)
+
+@app.post(f"{ADMIN_SECRET_URL}/update-cookies")
+async def update_cookies_file(request: Request, cookie_file: UploadFile = File(...), username: str = Depends(authenticate_admin)):
+    try:
+        content = await cookie_file.read()
+        # Проверяем, что это валидный JSON
+        parsed_json = json.loads(content.decode("utf-8"))
+        
+        with open(COOKIES_FILE, "w", encoding="utf-8") as f:
+            json.dump(parsed_json, f, ensure_ascii=False, indent=2)
+            
+        db_log("🔑 Файл cookies.json успешно обновлен через админ-панель.")
+    except Exception as e:
+        db_log(f"❌ Ошибка загрузки cookies.json: {e}")
+        
+    return RedirectResponse(url=ADMIN_SECRET_URL, status_code=303)
 
 @app.post(f"{ADMIN_SECRET_URL}/start")
 async def start_parsing_job(
