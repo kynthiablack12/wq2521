@@ -49,7 +49,7 @@ DB_FILE = os.path.join(DB_DIR, "products.db")
 
 CONCURRENCY_LIMIT = 2
 
-TELEGRAM_BOT_TOKEN = "8966210466:AAHol966aprf2lFRcE-aWbLZLcUH6SwCxM4"
+TELEGRAM_BOT_TOKEN = "8966210466:AAGuD_CyrgjiL7PS9KOWufFUPrCxx5IgNGU"
 WEB_APP_URL = "https://wq2521-production.up.railway.app/"
 
 ADMIN_SECRET_URL = "/secret-admin-manage-2026-panel"
