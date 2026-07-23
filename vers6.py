@@ -124,7 +124,6 @@ def init_db():
     os.makedirs(DB_DIR, exist_ok=True)
     conn = sqlite3.connect(DB_FILE, timeout=30)
     cursor = conn.cursor()
-    # Включаем WAL-режим для предотвращения блокировок файла БД при одновременном чтении/записи
     cursor.execute("PRAGMA journal_mode=WAL;")
     cursor.execute("PRAGMA synchronous=NORMAL;")
     
@@ -713,7 +712,6 @@ async def lifespan(app: FastAPI):
     log_task = asyncio.create_task(log_worker())
     
     async def start_telegram_bot():
-        # Дадим серверу 2 секунды полностью подняться, чтобы Railway зафиксировал успешный старт
         await asyncio.sleep(2.0)
         if TELEGRAM_BOT_TOKEN and TELEGRAM_BOT_TOKEN != "ВАШ_ТОКЕН_ОТ_BOTFATHER":
             try:
@@ -738,6 +736,11 @@ async def lifespan(app: FastAPI):
     bot_task.cancel()
 
 app = FastAPI(lifespan=lifespan)
+
+# --- ЭНДПОИНТ ДЛЯ RAILWAY HEALTHCHECK ---
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
 
 # --- АДАПТИВНЫЕ СТИЛИ И ШАБЛОНЫ ---
 LIGHT_THEME_CSS = """
