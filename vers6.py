@@ -11,7 +11,7 @@ import re
 import html
 import sqlite3
 import secrets
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import urlparse, urlunparse, quote
 from datetime import datetime, timedelta
 
 from fastapi import FastAPI, Depends, HTTPException, status, Form, Request, UploadFile, File
@@ -77,7 +77,7 @@ async def log_worker():
         timestamp, formatted_msg = await LOG_QUEUE.get()
         try:
             def _write():
-                conn = sqlite3.connect(DB_FILE, timeout=10)
+                conn = sqlite3.connect(DB_FILE, timeout=15)
                 cursor = conn.cursor()
                 cursor.execute("INSERT INTO logs (timestamp, message) VALUES (?, ?)", (timestamp, formatted_msg))
                 conn.commit()
@@ -122,8 +122,12 @@ def parse_price_value(price_str: str) -> int:
 
 def init_db():
     os.makedirs(DB_DIR, exist_ok=True)
-    conn = sqlite3.connect(DB_FILE, timeout=10)
+    conn = sqlite3.connect(DB_FILE, timeout=30)
     cursor = conn.cursor()
+    # Включаем WAL-режим для предотвращения блокировок файла БД при одновременном чтении/записи
+    cursor.execute("PRAGMA journal_mode=WAL;")
+    cursor.execute("PRAGMA synchronous=NORMAL;")
+    
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS products (
             link TEXT PRIMARY KEY,
@@ -307,12 +311,10 @@ async def test_cookies_validity():
         try:
             await context.add_cookies(cookies)
             page = await context.new_page()
-            # Пытаемся зайти на маркет под куками
             response = await page.goto("https://market.yandex.ru/", wait_until="commit", timeout=10000)
             await page.wait_for_timeout(2000)
             
             content = await page.content()
-            # Проверяем на наличие признаков капчи или блокировки
             if "капча" in content.lower() or "подтвердите, что вы не робот" in content.lower():
                 await browser.close()
                 return {"status": "warning", "message": "⚠️ Куки работают, но Яндекс затребовал капчу!"}
@@ -371,7 +373,41 @@ async def handle_route(route):
     else:
         await route.continue_()
 
-async def parse_single_product(context, item, semaphore, counter, total_items):
+async def fetch_market_median_price(context, title: str) -> int:
+    page = None
+    try:
+        page = await context.new_page()
+        await page.route("**/*", handle_route)
+        
+        encoded_query = quote(title[:60])
+        search_url = f"https://market.yandex.ru/search?text={encoded_query}"
+        
+        await page.goto(search_url, wait_until="commit", timeout=7000)
+        await page.wait_for_timeout(1500)
+        
+        content = await page.content()
+        soup = BeautifulSoup(content, "html.parser")
+        
+        price_elems = soup.find_all("span", {"data-auto": "snippet-price-current"})
+        prices = []
+        for p in price_elems[:3]:
+            val = parse_price_value(p.text)
+            if val > 0:
+                prices.append(val)
+                
+        if prices:
+            return max(prices)
+    except Exception:
+        pass
+    finally:
+        if page:
+            try:
+                await page.close()
+            except Exception:
+                pass
+    return 0
+
+async def parse_single_product(context, item, semaphore, counter, total_items, market_search_mode: bool):
     if PARSER_STATE["forced_stop"]:
         return {**item, "discount": "—", "discount_num": 0}
         
@@ -399,7 +435,15 @@ async def parse_single_product(context, item, semaphore, counter, total_items):
             except Exception:
                 pass
 
-            if discount != "—":
+            if market_search_mode and discount == "—":
+                market_price = await fetch_market_median_price(context, item['title'])
+                if market_price > item['price_num']:
+                    calculated_discount = int(round((1 - item['price_num'] / market_price) * 100))
+                    if calculated_discount > 0:
+                        discount = f"-{calculated_discount}%"
+                        discount_num = calculated_discount
+
+            if discount != "—" and discount_num == 0:
                 digits = re.findall(r'\d+', discount)
                 if digits:
                     discount_num = int(digits[0])
@@ -413,7 +457,7 @@ async def parse_single_product(context, item, semaphore, counter, total_items):
                 except Exception:
                     pass
             
-            await asyncio.sleep(0.8)
+            await asyncio.sleep(0.8 if not market_search_mode else 1.5)
 
         counter['done'] += 1
         PARSER_STATE["progress_text"] = f"Детали [{item['category_name']}]: {counter['done']}/{total_items}"
@@ -424,7 +468,7 @@ async def parse_single_product(context, item, semaphore, counter, total_items):
             "discount_num": discount_num
         }
 
-async def parse_store(store_key: str, with_discounts: bool, send_tg: bool, browser, cookies):
+async def parse_store(store_key: str, with_discounts: bool, send_tg: bool, market_search_mode: bool, browser, cookies):
     store_info = STORES[store_key]
     PARSER_STATE["current_store"] = store_info["name"]
     db_log(f"🛒 === Старт обработки: {store_info['name']} ===")
@@ -489,7 +533,7 @@ async def parse_store(store_key: str, with_discounts: bool, send_tg: bool, brows
             return
 
         def process_db_sync(products, store_id):
-            conn = sqlite3.connect(DB_FILE, timeout=10)
+            conn = sqlite3.connect(DB_FILE, timeout=15)
             cursor = conn.cursor()
             now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -527,12 +571,12 @@ async def parse_store(store_key: str, with_discounts: bool, send_tg: bool, brows
         total_items = len(processed_products)
 
         final_products = []
-        if with_discounts and total_items > 0 and not PARSER_STATE["forced_stop"]:
+        if (with_discounts or market_search_mode) and total_items > 0 and not PARSER_STATE["forced_stop"]:
             semaphore = asyncio.Semaphore(CONCURRENCY_LIMIT)
             counter = {'done': 0}
 
             tasks = [
-                parse_single_product(context, item, semaphore, counter, total_items)
+                parse_single_product(context, item, semaphore, counter, total_items, market_search_mode)
                 for item in processed_products
             ]
             final_products = await asyncio.gather(*tasks)
@@ -542,18 +586,18 @@ async def parse_store(store_key: str, with_discounts: bool, send_tg: bool, brows
         if PARSER_STATE["forced_stop"]:
             return
 
-        def update_details_in_db(items, is_with_discounts):
-            conn = sqlite3.connect(DB_FILE, timeout=10)
+        def update_details_in_db(items, is_active_mode):
+            conn = sqlite3.connect(DB_FILE, timeout=15)
             cursor = conn.cursor()
             for item in items:
-                if is_with_discounts:
+                if is_active_mode:
                     cursor.execute("""
                         UPDATE products SET discount = ?, discount_num = ? WHERE link = ?
                     """, (item['discount'], item['discount_num'], item['link']))
             conn.commit()
             conn.close()
 
-        await asyncio.to_thread(update_details_in_db, final_products, with_discounts)
+        await asyncio.to_thread(update_details_in_db, final_products, (with_discounts or market_search_mode))
 
         if new_items and send_tg and not PARSER_STATE["forced_stop"]:
             db_log(f"🔔 Найдено новых товаров: {len(new_items)}. Отправка в Telegram...")
@@ -572,7 +616,7 @@ async def parse_store(store_key: str, with_discounts: bool, send_tg: bool, brows
         except Exception:
             pass
 
-async def execute_parsing_task(target_store: str = "all", with_discounts: bool = False, send_tg: bool = True):
+async def execute_parsing_task(target_store: str = "all", with_discounts: bool = False, send_tg: bool = True, market_search_mode: bool = False):
     global PARSER_STATE
 
     if PARSER_STATE["is_active"]:
@@ -582,7 +626,7 @@ async def execute_parsing_task(target_store: str = "all", with_discounts: bool =
     PARSER_STATE["forced_stop"] = False
     PARSER_STATE["last_activity"] = asyncio.get_event_loop().time()
     
-    mode_desc = "ПОЛНЫЙ (со скидками)" if with_discounts else "БЫСТРЫЙ"
+    mode_desc = "ГЛУБОКИЙ АНАЛИЗ РЫНКА" if market_search_mode else ("ПОЛНЫЙ (со скидками)" if with_discounts else "БЫСТРЫЙ")
     PARSER_STATE["mode"] = mode_desc
     
     db_log(f"🚀 Запуск парсинга [{target_store.upper()}] [{mode_desc}] [TG-отправка: {'ВКЛ' if send_tg else 'ВЫКЛ'}]")
@@ -608,12 +652,12 @@ async def execute_parsing_task(target_store: str = "all", with_discounts: bool =
                 for key in STORES.keys():
                     if PARSER_STATE["forced_stop"]:
                         break
-                    await parse_store(key, with_discounts, send_tg, browser, cookies)
+                    await parse_store(key, with_discounts, send_tg, market_search_mode, browser, cookies)
                     if not PARSER_STATE["forced_stop"]:
                         await asyncio.sleep(2.0)
             else:
                 if target_store in STORES:
-                    await parse_store(target_store, with_discounts, send_tg, browser, cookies)
+                    await parse_store(target_store, with_discounts, send_tg, market_search_mode, browser, cookies)
 
             if PARSER_STATE["forced_stop"]:
                 db_log("⚠️ Парсинг был принудительно остановлен пользователем. Все успешно обработанные данные сохранены в каталоге.")
@@ -669,9 +713,11 @@ async def lifespan(app: FastAPI):
     log_task = asyncio.create_task(log_worker())
     
     async def start_telegram_bot():
+        # Дадим серверу 2 секунды полностью подняться, чтобы Railway зафиксировал успешный старт
+        await asyncio.sleep(2.0)
         if TELEGRAM_BOT_TOKEN and TELEGRAM_BOT_TOKEN != "ВАШ_ТОКЕН_ОТ_BOTFATHER":
             try:
-                req = HTTPXRequest(connect_timeout=10.0, read_timeout=10.0)
+                req = HTTPXRequest(connect_timeout=15.0, read_timeout=15.0)
                 tg_app = Application.builder().token(TELEGRAM_BOT_TOKEN).request(req).build()
                 tg_app.add_handler(CommandHandler("start", start_telegram_cmd))
                 tg_app.add_handler(CommandHandler("settings", settings_telegram_cmd))
@@ -679,10 +725,10 @@ async def lifespan(app: FastAPI):
                 
                 await tg_app.initialize()
                 await tg_app.start()
-                await tg_app.updater.start_polling()
-                db_log("🤖 Telegram-бот запущен!")
+                await tg_app.updater.start_polling(drop_pending_updates=True)
+                db_log("🤖 Telegram-бот успешно запущен в фоне!")
             except Exception as e:
-                db_log(f"⚠️ Ошибка бота: {e}")
+                db_log(f"⚠️ Ошибка запуска бота: {e}")
 
     bot_task = asyncio.create_task(start_telegram_bot())
 
@@ -1027,9 +1073,16 @@ ADMIN_TEMPLATE = LIGHT_THEME_CSS + """
                     </select>
                 </div>
 
-                <div style="display: flex; align-items: center; gap: 10px; background: var(--bg-color); padding: 10px 14px; border-radius: 12px;">
-                    <input type="checkbox" id="send_telegram" name="send_telegram" value="true" checked style="width: 18px; height: 18px; accent-color: var(--accent-blue); cursor: pointer;">
-                    <label for="send_telegram" style="font-weight: 600; font-size: 0.9rem; cursor: pointer;">📢 Отправлять уведомления о новых товарах в Telegram</label>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <div style="display: flex; align-items: center; gap: 10px; background: var(--bg-color); padding: 10px 14px; border-radius: 12px;">
+                        <input type="checkbox" id="send_telegram" name="send_telegram" value="true" checked style="width: 18px; height: 18px; accent-color: var(--accent-blue); cursor: pointer;">
+                        <label for="send_telegram" style="font-weight: 600; font-size: 0.9rem; cursor: pointer;">📢 Отправлять уведомления о новых товарах в Telegram</label>
+                    </div>
+
+                    <div style="display: flex; align-items: center; gap: 10px; background: #fffbeb; border: 1px solid #fef3c7; padding: 10px 14px; border-radius: 12px;">
+                        <input type="checkbox" id="market_search" name="market_search" value="true" style="width: 18px; height: 18px; accent-color: var(--accent-gold); cursor: pointer;">
+                        <label for="market_search" style="font-weight: 600; font-size: 0.9rem; color: #b45309; cursor: pointer;">🔍 Глубокий анализ: сверять цены с общим поиском Маркета</label>
+                    </div>
                 </div>
 
                 <div style="display: flex; gap: 10px; flex-wrap: wrap;">
@@ -1182,7 +1235,6 @@ async def api_test_cookies(request: Request, username: str = Depends(authenticat
 async def update_cookies_file(request: Request, cookie_file: UploadFile = File(...), username: str = Depends(authenticate_admin)):
     try:
         content = await cookie_file.read()
-        # Проверяем, что это валидный JSON
         parsed_json = json.loads(content.decode("utf-8"))
         
         with open(COOKIES_FILE, "w", encoding="utf-8") as f:
@@ -1200,12 +1252,19 @@ async def start_parsing_job(
     target_store: str = Form(...), 
     mode: str = Form(...), 
     send_telegram: str = Form(default=None),
+    market_search: str = Form(default=None),
     username: str = Depends(authenticate_admin)
 ):
     if not PARSER_STATE["is_active"]:
         with_discounts = (mode == "full")
         send_tg = (send_telegram == "true")
-        asyncio.create_task(execute_parsing_task(target_store=target_store, with_discounts=with_discounts, send_tg=send_tg))
+        market_search_mode = (market_search == "true")
+        asyncio.create_task(execute_parsing_task(
+            target_store=target_store, 
+            with_discounts=with_discounts, 
+            send_tg=send_tg, 
+            market_search_mode=market_search_mode
+        ))
         return RedirectResponse(url=ADMIN_SECRET_URL, status_code=303)
 
 @app.post(f"{ADMIN_SECRET_URL}/stop")
@@ -1233,22 +1292,27 @@ async def get_user_dashboard(category: str = "yandex_fabrika"):
         category = "yandex_fabrika"
 
     def fetch_products():
-        conn = sqlite3.connect(DB_FILE, timeout=5)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT * FROM products WHERE category_id = ? ORDER BY discount_num DESC", (category,))
-        rows = cursor.fetchall()
+        try:
+            conn = sqlite3.connect(DB_FILE, timeout=10)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            cursor.execute("SELECT * FROM products WHERE category_id = ? ORDER BY discount_num DESC", (category,))
+            rows = cursor.fetchall()
 
-        cursor.execute("SELECT COUNT(*) FROM products WHERE category_id = ?", (category,))
-        total_count = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM products WHERE category_id = ?", (category,))
+            total_count_row = cursor.fetchone()
+            total_count = total_count_row[0] if total_count_row else 0
 
-        cursor.execute("SELECT last_updated FROM products ORDER BY last_updated DESC LIMIT 1")
-        last_upd_row = cursor.fetchone()
-        last_update = last_upd_row[0] if last_upd_row else "Никогда"
+            cursor.execute("SELECT last_updated FROM products ORDER BY last_updated DESC LIMIT 1")
+            last_upd_row = cursor.fetchone()
+            last_update = last_upd_row[0] if last_upd_row else "Еще не обновлялось"
 
-        conn.close()
-        return [dict(row) for row in rows], total_count, last_update
+            conn.close()
+            return [dict(row) for row in rows], total_count, last_update
+        except Exception as e:
+            db_log(f"⚠️ Ошибка при чтении витрины из БД: {e}")
+            return [], 0, "Ошибка базы"
 
     products, total_count, last_update = await asyncio.to_thread(fetch_products)
     template = Template(USER_TEMPLATE)
