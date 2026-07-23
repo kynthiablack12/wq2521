@@ -370,13 +370,12 @@ async def handle_route(route):
         await route.continue_()
 
 async def fetch_market_median_price(context, title: str) -> int:
-    """Функция поиска товара на Яндекс Маркете для вычисления рыночной цены"""
     page = None
     try:
         page = await context.new_page()
         await page.route("**/*", handle_route)
         
-        encoded_query = quote(title[:60]) # Берем первые 60 символов для точного поиска
+        encoded_query = quote(title[:60])
         search_url = f"https://market.yandex.ru/search?text={encoded_query}"
         
         await page.goto(search_url, wait_until="commit", timeout=7000)
@@ -385,16 +384,14 @@ async def fetch_market_median_price(context, title: str) -> int:
         content = await page.content()
         soup = BeautifulSoup(content, "html.parser")
         
-        # Ищем цены в поисковой выдаче
         price_elems = soup.find_all("span", {"data-auto": "snippet-price-current"})
         prices = []
-        for p in price_elems[:3]: # Берем первые 3 предложения рынка
+        for p in price_elems[:3]:
             val = parse_price_value(p.text)
             if val > 0:
                 prices.append(val)
                 
         if prices:
-            # Возвращаем максимальную из найденных цен рынка как базу для сравнения скидки
             return max(prices)
     except Exception:
         pass
@@ -434,7 +431,6 @@ async def parse_single_product(context, item, semaphore, counter, total_items, m
             except Exception:
                 pass
 
-            # Если включен режим сверки с рынком и на странице нет явной скидки — ищем через общий поиск
             if market_search_mode and discount == "—":
                 market_price = await fetch_market_median_price(context, item['title'])
                 if market_price > item['price_num']:
@@ -713,9 +709,11 @@ async def lifespan(app: FastAPI):
     log_task = asyncio.create_task(log_worker())
     
     async def start_telegram_bot():
+        # Дадим серверу 2 секунды полностью подняться, чтобы Railway зафиксировал успешный старт
+        await asyncio.sleep(2.0)
         if TELEGRAM_BOT_TOKEN and TELEGRAM_BOT_TOKEN != "ВАШ_ТОКЕН_ОТ_BOTFATHER":
             try:
-                req = HTTPXRequest(connect_timeout=10.0, read_timeout=10.0)
+                req = HTTPXRequest(connect_timeout=15.0, read_timeout=15.0)
                 tg_app = Application.builder().token(TELEGRAM_BOT_TOKEN).request(req).build()
                 tg_app.add_handler(CommandHandler("start", start_telegram_cmd))
                 tg_app.add_handler(CommandHandler("settings", settings_telegram_cmd))
@@ -723,10 +721,10 @@ async def lifespan(app: FastAPI):
                 
                 await tg_app.initialize()
                 await tg_app.start()
-                await tg_app.updater.start_polling()
-                db_log("🤖 Telegram-бот запущен!")
+                await tg_app.updater.start_polling(drop_pending_updates=True)
+                db_log("🤖 Telegram-бот успешно запущен в фоне!")
             except Exception as e:
-                db_log(f"⚠️ Ошибка бота: {e}")
+                db_log(f"⚠️ Ошибка запуска бота: {e}")
 
     bot_task = asyncio.create_task(start_telegram_bot())
 
